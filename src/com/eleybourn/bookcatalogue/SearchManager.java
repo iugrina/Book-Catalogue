@@ -65,6 +65,8 @@ public class SearchManager implements OnTaskEndedListener {
 	private Bundle mAmazonData;
 	// Output from LibraryThing search
 	private Bundle mLibraryThingData;
+	// Output from NSK@iugrina search
+	private Bundle mNSKData;
 
 	// Handler for search results
 	private SearchResultHandler mSearchHandler = null;
@@ -117,6 +119,8 @@ public class SearchManager implements OnTaskEndedListener {
 			return mGoogleHandler;
 		} else if (t instanceof SearchLibraryThingThread){
 			return mLibraryThingHandler;
+		} else if (t instanceof SearchNSKThread){
+			return mNSKHandler;
 		} else {
 			return null;
 		}
@@ -167,6 +171,13 @@ public class SearchManager implements OnTaskEndedListener {
 			if (mIsbn != null && mIsbn.trim().length() > 0)
 				startOne( new SearchLibraryThingThread(mTaskManager, mLibraryThingHandler, mAuthor, mTitle, mIsbn, mFetchThumbnail));		
 	}
+	/**
+	 * Start a NSK@iugrina search
+	 */
+	private void startNSK() {
+		if (!mCancelledFlg)
+			startOne( new SearchNSKThread(mTaskManager, mNSKHandler, mAuthor, mTitle, mIsbn, mFetchThumbnail) );		
+	}
 
 	/**
 	 * Start a search
@@ -181,6 +192,7 @@ public class SearchManager implements OnTaskEndedListener {
 		mGoogleData = null;
 		mAmazonData = null;
 		mLibraryThingData = null;
+		mNSKData = null;
 		mWaitingForIsbn = false;
 		mCancelledFlg = false;
 		mFinished = false;
@@ -213,6 +225,7 @@ public class SearchManager implements OnTaskEndedListener {
 			}
 			startGoogle();
 			startAmazon();
+			startNSK();
 		} else {
 			// Run one at a time, startNext() defined the order.
 			mWaitingForIsbn = true;
@@ -275,6 +288,7 @@ public class SearchManager implements OnTaskEndedListener {
 		accumulateData(mGoogleData);
 		accumulateData(mAmazonData);
 		accumulateData(mLibraryThingData);
+		accumulateData(mNSKData);
 		
     	// If there are thumbnails present, pick the biggest, delete others and rename.
     	Utils.cleanupThumbnails(mBookData);
@@ -417,5 +431,34 @@ public class SearchManager implements OnTaskEndedListener {
 			}
 		}
 	};
+	
+	/**
+	 * Handle NSK@iugrina completion
+	 */
+	private SearchTaskHandler mNSKHandler = new SearchTaskHandler() {
+		@Override
+		public void onSearchThreadFinish(SearchThread t, Bundle bookData, boolean cancelled) {
+			mCancelledFlg = cancelled;
+			mNSKData = bookData;
+			if (cancelled) {
+				mWaitingForIsbn = false;
+			} else {
+				if (mWaitingForIsbn) {
+					if (Utils.isNonBlankString(bookData, CatalogueDBAdapter.KEY_ISBN)) {
+						mWaitingForIsbn = false;
+						// Start the other two...even if they have run before
+						mIsbn = bookData.getString(CatalogueDBAdapter.KEY_ISBN);
+						startGoogle();
+						startAmazon();
+						startLibraryThing();
+					} else {
+						// Start next one that has not run. 
+						startNext();
+					}
+				}				
+			}
+		}
+	};
+
 
 }
